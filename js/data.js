@@ -1,48 +1,42 @@
 // ===========================================================================
-// data.js — Static reference data for the app.
+// data.js — Static reference content (not per-user state).
 //
-// Everything here is *content*: the list of muscles, equipment, goals and the
-// exercise database. None of this is per-user state (that lives in state.js).
-// Keeping it separate means an LLM (or a human) can grow the exercise library
-// later without touching the algorithm.
+// NEW MODEL (v2): a workout is a MOVEMENT (a motion, e.g. "Bent Over Row"),
+// independent of equipment. Each movement lists the EQUIPMENT OPTIONS that can
+// perform it. The algorithm decides a target load (from muscle strength), then
+// picks the option whose *achievable* load best matches — instead of clamping a
+// single hard-wired piece of equipment down to whatever it can manage.
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// Muscle categories.
-//
-// `seedFraction` is the starting "strength score" for this muscle expressed as
-// a fraction of the user's bodyweight. The strength score is an abstract number
-// (roughly: an 8-rep working load in lb on a representative movement) that the
-// progression algorithm nudges up and down over time. Prescriptions for every
-// exercise are derived from these scores, so this is the single source of truth
-// for "how strong is the user".
+// Muscle categories. `seedFraction` seeds the strength score as a fraction of
+// bodyweight, expressed in a "per-limb-equivalent working load" (lb) — the
+// common scale every equipment option is compared against. Conservative on
+// purpose: new users tune their real baseline via the card popup, and the
+// green/red progression takes over from there.
 // ---------------------------------------------------------------------------
 const MUSCLES = {
-  cardio:      { label: 'Cardio',          seedFraction: 0.12, group: 'Conditioning' },
-  chest:       { label: 'Chest',           seedFraction: 0.26, group: 'Push' },
-  front_delt:  { label: 'Front Shoulder',  seedFraction: 0.14, group: 'Push' },
-  side_delt:   { label: 'Side Shoulder',   seedFraction: 0.10, group: 'Push' },
-  rear_delt:   { label: 'Rear Shoulder',   seedFraction: 0.08, group: 'Pull' },
-  triceps:     { label: 'Triceps',         seedFraction: 0.16, group: 'Push' },
-  biceps:      { label: 'Biceps',          seedFraction: 0.16, group: 'Pull' },
-  forearms:    { label: 'Forearms',        seedFraction: 0.14, group: 'Pull' },
-  upper_back:  { label: 'Upper Back / Lats',seedFraction: 0.30, group: 'Pull' },
-  traps:       { label: 'Traps',           seedFraction: 0.34, group: 'Pull' },
-  abs:         { label: 'Abs',             seedFraction: 0.10, group: 'Core' },
-  obliques:    { label: 'Obliques',        seedFraction: 0.10, group: 'Core' },
-  lower_back:  { label: 'Lower Back',      seedFraction: 0.22, group: 'Core' },
-  glutes:      { label: 'Glutes',          seedFraction: 0.40, group: 'Legs' },
-  quads:       { label: 'Quads',           seedFraction: 0.42, group: 'Legs' },
-  hamstrings:  { label: 'Hamstrings',      seedFraction: 0.34, group: 'Legs' },
-  calves:      { label: 'Calves',          seedFraction: 0.40, group: 'Legs' },
+  cardio:      { label: 'Heart & Lungs',   seedFraction: 0.12, group: 'Conditioning' },
+  chest:       { label: 'Chest',           seedFraction: 0.16, group: 'Push' },
+  front_delt:  { label: 'Front Shoulder',  seedFraction: 0.09, group: 'Push' },
+  side_delt:   { label: 'Side Shoulder',   seedFraction: 0.055, group: 'Push' },
+  rear_delt:   { label: 'Rear Shoulder',   seedFraction: 0.045, group: 'Pull' },
+  triceps:     { label: 'Triceps',         seedFraction: 0.09, group: 'Push' },
+  biceps:      { label: 'Biceps',          seedFraction: 0.10, group: 'Pull' },
+  forearms:    { label: 'Forearms',        seedFraction: 0.08, group: 'Pull' },
+  upper_back:  { label: 'Upper Back / Lats',seedFraction: 0.16, group: 'Pull' },
+  traps:       { label: 'Traps',           seedFraction: 0.22, group: 'Pull' },
+  abs:         { label: 'Abs',             seedFraction: 0.08, group: 'Core' },
+  obliques:    { label: 'Obliques',        seedFraction: 0.08, group: 'Core' },
+  lower_back:  { label: 'Lower Back',      seedFraction: 0.14, group: 'Core' },
+  glutes:      { label: 'Glutes',          seedFraction: 0.24, group: 'Legs' },
+  quads:       { label: 'Quads',           seedFraction: 0.26, group: 'Legs' },
+  hamstrings:  { label: 'Hamstrings',      seedFraction: 0.20, group: 'Legs' },
+  calves:      { label: 'Calves',          seedFraction: 0.26, group: 'Legs' },
 };
 
 // ---------------------------------------------------------------------------
-// Equipment.
-//
-// `weights` flag marks the three items that get a sub-section where the user
-// declares which physical weights they own (dumbbells, curl-bar plates,
-// barbell plates).
+// Equipment (unchanged). `weights` marks items with a weight-inventory picker.
 // ---------------------------------------------------------------------------
 const EQUIPMENT = [
   { id: 'flat_area',        label: 'Flat open area',     icon: '🟩', section: 'Space' },
@@ -71,224 +65,157 @@ const EQUIPMENT = [
   { id: 'box',              label: 'Plyo box / step',    icon: '📦', section: 'Cardio gear' },
 ];
 
-// Default weight inventories used when "select all" (gym) is assumed.
-// Each entry: weight (lb) -> count owned.
 const DEFAULT_WEIGHTS = {
   dumbbells: { 5:2, 10:2, 15:2, 20:2, 25:2, 30:2, 35:2, 40:2, 45:2, 50:2, 55:2, 60:2, 70:2, 80:2, 90:2, 100:2 },
   barbell_plates: { 2.5:4, 5:4, 10:4, 25:4, 35:2, 45:6 },
   curl_bar_plates: { 2.5:4, 5:4, 10:4, 25:2 },
 };
-
-// Candidate weights offered in the weight-picker UI (count defaults to 0).
 const WEIGHT_OPTIONS = {
   dumbbells: [3,5,8,10,12,15,17.5,20,25,30,35,40,45,50,55,60,65,70,75,80,90,100],
   barbell_plates: [1.25,2.5,5,10,25,35,45],
   curl_bar_plates: [1.25,2.5,5,10,25],
 };
-
-// Implied bar weights (lb) for snapping barbell-style prescriptions.
 const BAR_WEIGHTS = { barbell: 45, curl_bar: 20 };
 
 // ---------------------------------------------------------------------------
-// Goals.
-//
-// Each goal contributes a weighting over muscle categories. The selection
-// algorithm sums the weights from every selected goal to get today's muscle
-// priorities. `intensity` scales prescribed difficulty (longevity / injury
-// prevention train lighter), `cardioBias` nudges how much conditioning shows up.
+// Goals → muscle priorities (summed across selected goals).
 // ---------------------------------------------------------------------------
 const GOALS = [
-  {
-    id: 'long_life',
-    label: 'Long life',
-    blurb: 'Balanced full-body health & cardiovascular fitness.',
-    icon: '🌳',
-    intensity: 0.9,
-    weights: {
-      cardio: 1.0, quads: 0.7, glutes: 0.7, hamstrings: 0.6, upper_back: 0.7,
-      chest: 0.5, lower_back: 0.6, abs: 0.6, calves: 0.5, rear_delt: 0.5,
-      side_delt: 0.4, biceps: 0.3, triceps: 0.3, traps: 0.3, front_delt: 0.3,
-      obliques: 0.4, forearms: 0.3,
-    },
-  },
-  {
-    id: 'injury_prevention',
-    label: 'Injury prevention',
-    blurb: 'Stabilizers, posterior chain, core & mobility.',
-    icon: '🛡️',
-    intensity: 0.8,
-    weights: {
-      rear_delt: 1.0, lower_back: 1.0, abs: 0.9, obliques: 0.8, glutes: 0.9,
-      hamstrings: 0.8, upper_back: 0.8, forearms: 0.6, calves: 0.6, quads: 0.6,
-      side_delt: 0.6, cardio: 0.5, chest: 0.3, biceps: 0.3, triceps: 0.4,
-      traps: 0.5, front_delt: 0.3,
-    },
-  },
-  {
-    id: 'male_vanity',
-    label: 'Vanity muscles',
-    blurb: 'Chest, arms, shoulders, abs & lats (the V-taper).',
-    icon: '💪',
-    intensity: 1.0,
-    weights: {
-      chest: 1.0, biceps: 1.0, triceps: 0.9, side_delt: 0.9, upper_back: 0.8,
-      abs: 0.8, front_delt: 0.7, traps: 0.6, rear_delt: 0.5, forearms: 0.5,
-      obliques: 0.5, quads: 0.4, glutes: 0.4, hamstrings: 0.3, calves: 0.4,
-      cardio: 0.3, lower_back: 0.3,
-    },
-  },
-  {
-    id: 'lose_weight',
-    label: 'Lose weight',
-    blurb: 'High-calorie cardio + big compound lifts.',
-    icon: '🔥',
-    intensity: 0.95,
-    weights: {
-      cardio: 1.0, quads: 0.8, glutes: 0.8, upper_back: 0.7, chest: 0.7,
-      hamstrings: 0.7, abs: 0.7, obliques: 0.5, calves: 0.5, triceps: 0.5,
-      biceps: 0.5, side_delt: 0.5, front_delt: 0.4, rear_delt: 0.4,
-      traps: 0.4, lower_back: 0.5, forearms: 0.4,
-    },
-  },
+  { id:'long_life', label:'Long life', blurb:'Balanced full-body health & cardiovascular fitness.', icon:'🌳', intensity:0.9,
+    weights:{ cardio:1.0, quads:0.7, glutes:0.7, hamstrings:0.6, upper_back:0.7, chest:0.5, lower_back:0.6, abs:0.6, calves:0.5, rear_delt:0.5, side_delt:0.4, biceps:0.3, triceps:0.3, traps:0.3, front_delt:0.3, obliques:0.4, forearms:0.3 } },
+  { id:'injury_prevention', label:'Injury prevention', blurb:'Stabilizers, posterior chain, core & mobility.', icon:'🛡️', intensity:0.8,
+    weights:{ rear_delt:1.0, lower_back:1.0, abs:0.9, obliques:0.8, glutes:0.9, hamstrings:0.8, upper_back:0.8, forearms:0.6, calves:0.6, quads:0.6, side_delt:0.6, cardio:0.5, chest:0.3, biceps:0.3, triceps:0.4, traps:0.5, front_delt:0.3 } },
+  { id:'male_vanity', label:'Vanity muscles', blurb:'Chest, arms, shoulders, abs & lats (the V-taper).', icon:'💪', intensity:1.0,
+    weights:{ chest:1.0, biceps:1.0, triceps:0.9, side_delt:0.9, upper_back:0.8, abs:0.8, front_delt:0.7, traps:0.6, rear_delt:0.5, forearms:0.5, obliques:0.5, quads:0.4, glutes:0.4, hamstrings:0.3, calves:0.4, cardio:0.3, lower_back:0.3 } },
+  { id:'lose_weight', label:'Lose weight', blurb:'High-calorie cardio + big compound lifts.', icon:'🔥', intensity:0.95,
+    weights:{ cardio:1.0, quads:0.8, glutes:0.8, upper_back:0.7, chest:0.7, hamstrings:0.7, abs:0.7, obliques:0.5, calves:0.5, triceps:0.5, biceps:0.5, side_delt:0.5, front_delt:0.4, rear_delt:0.4, traps:0.4, lower_back:0.5, forearms:0.4 } },
 ];
 
 // ---------------------------------------------------------------------------
-// Exercise database.
+// Equipment-option helpers. Each option declares a `kind` that tells the load
+// engine how to convert the target load <-> a real prescription:
 //
-// Fields:
-//   id            unique key (also used in history)
-//   name          display name
-//   emoji         lightweight "image" for the card
-//   primary       primary muscle (drives the prescribed load)
-//   secondary     [] of assisting muscles (counted at half weight for variety)
-//   equip         [] equipment ids, ALL required to be available
-//   equipAny      optional [][] — at least one id from each inner group required
-//   loadType      'per_dumbbell' | 'barbell' | 'curl_bar' | 'kettlebell' |
-//                 'bodyweight' | 'time' | 'none'
-//   twoHand       true if it consumes a *pair* of dumbbells
-//   mult          load multiplier applied to the primary muscle's strength score
-//   scheme        { sets, reps }   (for 'time' exercises reps = minutes)
-//   benchmarkFor  muscle id if this is the canonical isolation lift used to
-//                 read out that muscle's strength number
-//   cat           'strength' | 'cardio' | 'core' | 'mobility'
+//   dbpair    a pair of dumbbells     (load shown "per hand")
+//   dbsingle  one dumbbell
+//   barbell   olympic bar + plates    (load shown as total)
+//   curlbar   EZ bar + plates         (total)
+//   cable     cable stack             (total, fine increments)
+//   machine   plate/selectorized mach (total)
+//   bodyweight no external load        (reps scale with strength)
+//   time      duration in minutes      (cardio)
+//   hold      isometric hold in seconds
+//
+// Options are listed best→fallback; that order breaks ties when two options
+// match the target load equally well.
 // ---------------------------------------------------------------------------
-const S = (sets, reps) => ({ sets, reps });
+const O = {
+  db:        (extra={}) => ({ id:'db',    kind:'dbpair',   equip:['dumbbells'], ...extra }),
+  db1:       (extra={}) => ({ id:'db1',   kind:'dbsingle', equip:['dumbbells'], ...extra }),
+  barbell:   (extra={}) => ({ id:'bb',    kind:'barbell',  equip:['barbell'], ...extra }),
+  barbellRk: (extra={}) => ({ id:'bb',    kind:'barbell',  equip:['barbell','squat_rack'], ...extra }),
+  curlbar:   (extra={}) => ({ id:'ez',    kind:'curlbar',  equip:['curl_bar'], ...extra }),
+  cable:     (extra={}) => ({ id:'cab',   kind:'cable',    equip:['cable_machine'], ...extra }),
+  machine:   (extra={}) => ({ id:'mac',   kind:'machine',  equip:['leg_machine'], ...extra }),
+  body:      (extra={}) => ({ id:'bw',    kind:'bodyweight', equip:[], ...extra }),
+  bodyBench: (extra={}) => ({ id:'bw',    kind:'bodyweight', equip:['bench'], ...extra }),
+  bodyBar:   (extra={}) => ({ id:'pb',    kind:'bodyweight', equip:['pullup_bar'], ...extra }),
+};
 
-const EXERCISES = [
-  // ---- Chest -------------------------------------------------------------
-  { id:'flat_db_press', name:'Flat Dumbbell Press', emoji:'🏋️', primary:'chest', secondary:['front_delt','triceps'],
-    equip:['dumbbells','bench'], loadType:'per_dumbbell', twoHand:true, mult:0.9, scheme:S(4,8), cat:'strength' },
-  { id:'incline_db_press', name:'Incline Dumbbell Press', emoji:'📐', primary:'chest', secondary:['front_delt','triceps'],
-    equip:['dumbbells','bench'], loadType:'per_dumbbell', twoHand:true, mult:0.82, scheme:S(4,8), cat:'strength' },
-  { id:'barbell_bench', name:'Barbell Bench Press', emoji:'🛏️', primary:'chest', secondary:['front_delt','triceps'],
-    equip:['barbell','bench'], loadType:'barbell', mult:2.4, scheme:S(4,8), cat:'strength' },
-  { id:'db_fly', name:'Dumbbell Fly', emoji:'🦋', primary:'chest', secondary:['front_delt'],
-    equip:['dumbbells','bench'], loadType:'per_dumbbell', twoHand:true, mult:0.5, scheme:S(3,12), cat:'strength', benchmarkFor:'chest' },
-  { id:'pushup', name:'Push-up', emoji:'🤸', primary:'chest', secondary:['front_delt','triceps','abs'],
-    equip:[], loadType:'bodyweight', mult:1, scheme:S(3,12), cat:'strength' },
+// `rel` = how heavily this movement loads its primary muscle vs the per-limb
+// reference (compounds > isolation). Scheme is sets×reps.
+const MOVEMENTS = [
+  // ---- PUSH: chest -------------------------------------------------------
+  { id:'flat_press', name:'Flat Press', emoji:'🏋️', pattern:'push', primary:'chest', secondary:['front_delt','triceps'],
+    cat:'strength', rel:1.5, scheme:{sets:4,reps:8}, options:[ O.db(), O.barbell({equip:['barbell','bench']}), O.cable(), O.bodyBench({label:'Push-ups'}) ] },
+  { id:'incline_press', name:'Incline Press', emoji:'📐', pattern:'push', primary:'chest', secondary:['front_delt','triceps'],
+    cat:'strength', rel:1.35, scheme:{sets:4,reps:8}, options:[ O.db({equip:['dumbbells','bench']}), O.barbell({equip:['barbell','bench']}), O.body({label:'Decline Push-ups'}) ] },
+  { id:'chest_fly', name:'Chest Fly', emoji:'🦋', pattern:'push', primary:'chest', secondary:['front_delt'],
+    cat:'strength', rel:0.8, scheme:{sets:3,reps:12}, benchmarkFor:'chest', options:[ O.db({equip:['dumbbells','bench']}), O.cable() ] },
 
-  // ---- Shoulders ---------------------------------------------------------
-  { id:'db_shoulder_press', name:'Dumbbell Shoulder Press', emoji:'🆙', primary:'front_delt', secondary:['side_delt','triceps'],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:true, mult:0.85, scheme:S(4,8), cat:'strength' },
-  { id:'military_press', name:'Overhead Barbell Press', emoji:'⬆️', primary:'front_delt', secondary:['side_delt','triceps'],
-    equip:['barbell'], loadType:'barbell', mult:1.7, scheme:S(4,8), cat:'strength', benchmarkFor:'front_delt' },
-  { id:'lateral_raise', name:'Lateral Raise', emoji:'🔱', primary:'side_delt', secondary:[],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:true, mult:1.0, scheme:S(3,12), cat:'strength', benchmarkFor:'side_delt' },
-  { id:'front_raise', name:'Front Raise', emoji:'🙆', primary:'front_delt', secondary:[],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:true, mult:1.0, scheme:S(3,12), cat:'strength' },
-  { id:'rear_fly', name:'Reverse / Rear-Delt Fly', emoji:'🕊️', primary:'rear_delt', secondary:['upper_back'],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:true, mult:1.0, scheme:S(3,15), cat:'strength', benchmarkFor:'rear_delt' },
+  // ---- PUSH: shoulders ---------------------------------------------------
+  { id:'overhead_press', name:'Overhead Press', emoji:'⬆️', pattern:'push', primary:'front_delt', secondary:['side_delt','triceps'],
+    cat:'strength', rel:1.25, scheme:{sets:4,reps:8}, benchmarkFor:'front_delt', options:[ O.db(), O.barbell(), O.cable() ] },
+  { id:'lateral_raise', name:'Lateral Raise', emoji:'🔱', pattern:'push', primary:'side_delt', secondary:[],
+    cat:'strength', rel:1.0, scheme:{sets:3,reps:12}, benchmarkFor:'side_delt', options:[ O.db(), O.cable() ] },
+  { id:'front_raise', name:'Front Raise', emoji:'🙆', pattern:'push', primary:'front_delt', secondary:[],
+    cat:'strength', rel:1.0, scheme:{sets:3,reps:12}, options:[ O.db(), O.cable() ] },
+  { id:'rear_fly', name:'Rear-Delt Fly', emoji:'🕊️', pattern:'pull', primary:'rear_delt', secondary:['upper_back'],
+    cat:'strength', rel:1.0, scheme:{sets:3,reps:15}, benchmarkFor:'rear_delt', options:[ O.db(), O.cable() ] },
 
-  // ---- Back --------------------------------------------------------------
-  { id:'one_arm_row', name:'One-Arm Dumbbell Row', emoji:'🚣', primary:'upper_back', secondary:['biceps','rear_delt'],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:false, mult:1.0, scheme:S(4,8), cat:'strength', benchmarkFor:'upper_back' },
-  { id:'barbell_row', name:'Bent-Over Barbell Row', emoji:'🛶', primary:'upper_back', secondary:['biceps','rear_delt','lower_back'],
-    equip:['barbell'], loadType:'barbell', mult:1.9, scheme:S(4,8), cat:'strength' },
-  { id:'pullup', name:'Pull-up', emoji:'🧗', primary:'upper_back', secondary:['biceps','forearms'],
-    equip:['pullup_bar'], loadType:'bodyweight', mult:1, scheme:S(4,6), cat:'strength' },
-  { id:'lat_pulldown', name:'Cable Lat Pulldown', emoji:'🪂', primary:'upper_back', secondary:['biceps'],
-    equip:['cable_machine'], loadType:'barbell', mult:1.5, scheme:S(4,10), cat:'strength' },
-  { id:'shrug', name:'Dumbbell Shrug', emoji:'🤷', primary:'traps', secondary:['forearms'],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:true, mult:1.0, scheme:S(4,12), cat:'strength', benchmarkFor:'traps' },
+  // ---- PULL: back --------------------------------------------------------
+  { id:'bent_row', name:'Bent Over Row', emoji:'🚣', pattern:'pull', primary:'upper_back', secondary:['biceps','rear_delt'],
+    cat:'strength', rel:1.4, scheme:{sets:4,reps:8}, benchmarkFor:'upper_back', options:[ O.db(), O.db1({label:'One-Arm Row'}), O.barbell(), O.curlbar(), O.cable() ] },
+  { id:'pulldown', name:'Lat Pulldown / Pull-up', emoji:'🧗', pattern:'pull', primary:'upper_back', secondary:['biceps','forearms'],
+    cat:'strength', rel:1.3, scheme:{sets:4,reps:10}, options:[ O.cable({label:'Lat Pulldown'}), O.bodyBar({label:'Pull-ups', scheme:{sets:4,reps:6}}) ] },
+  { id:'shrug', name:'Shrug', emoji:'🤷', pattern:'carry', primary:'traps', secondary:['forearms'],
+    cat:'strength', rel:1.5, scheme:{sets:4,reps:12}, benchmarkFor:'traps', options:[ O.db(), O.barbell() ] },
 
-  // ---- Arms --------------------------------------------------------------
-  { id:'db_curl', name:'Standing Dumbbell Curl', emoji:'💪', primary:'biceps', secondary:['forearms'],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:true, mult:1.0, scheme:S(4,8), cat:'strength', benchmarkFor:'biceps' },
-  { id:'curl_bar_curl', name:'EZ-Bar Curl', emoji:'〰️', primary:'biceps', secondary:['forearms'],
-    equip:['curl_bar'], loadType:'curl_bar', mult:1.9, scheme:S(4,8), cat:'strength' },
-  { id:'hammer_curl', name:'Hammer Curl', emoji:'🔨', primary:'biceps', secondary:['forearms'],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:true, mult:1.0, scheme:S(3,10), cat:'strength' },
-  { id:'tricep_ext', name:'Overhead Triceps Extension', emoji:'🔧', primary:'triceps', secondary:[],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:false, mult:1.0, scheme:S(4,10), cat:'strength', benchmarkFor:'triceps' },
-  { id:'tricep_kickback', name:'Triceps Kickback', emoji:'🦵', primary:'triceps', secondary:[],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:true, mult:0.6, scheme:S(3,12), cat:'strength' },
-  { id:'dips', name:'Bench Dips', emoji:'⬇️', primary:'triceps', secondary:['chest','front_delt'],
-    equip:['bench'], loadType:'bodyweight', mult:1, scheme:S(3,12), cat:'strength' },
-  { id:'wrist_curl', name:'Wrist Curl', emoji:'🤜', primary:'forearms', secondary:[],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:true, mult:1.0, scheme:S(3,15), cat:'strength', benchmarkFor:'forearms' },
+  // ---- PULL: arms --------------------------------------------------------
+  { id:'biceps_curl', name:'Biceps Curl', emoji:'💪', pattern:'pull', primary:'biceps', secondary:['forearms'],
+    cat:'strength', rel:1.0, scheme:{sets:4,reps:8}, benchmarkFor:'biceps', options:[ O.db(), O.curlbar(), O.cable() ] },
+  { id:'hammer_curl', name:'Hammer Curl', emoji:'🔨', pattern:'pull', primary:'biceps', secondary:['forearms'],
+    cat:'strength', rel:1.0, scheme:{sets:3,reps:10}, options:[ O.db() ] },
+  { id:'triceps_ext', name:'Triceps Extension', emoji:'🔧', pattern:'push', primary:'triceps', secondary:[],
+    cat:'strength', rel:1.0, scheme:{sets:4,reps:10}, benchmarkFor:'triceps', options:[ O.db1(), O.curlbar(), O.cable() ] },
+  { id:'triceps_dip', name:'Triceps Dip', emoji:'⬇️', pattern:'push', primary:'triceps', secondary:['chest','front_delt'],
+    cat:'strength', rel:1.0, scheme:{sets:3,reps:12}, options:[ O.bodyBench() ] },
+  { id:'wrist_curl', name:'Wrist Curl', emoji:'🤜', pattern:'carry', primary:'forearms', secondary:[],
+    cat:'strength', rel:1.0, scheme:{sets:3,reps:15}, benchmarkFor:'forearms', options:[ O.db(), O.barbell() ] },
 
-  // ---- Core --------------------------------------------------------------
-  { id:'plank', name:'Plank', emoji:'🧱', primary:'abs', secondary:['obliques','lower_back'],
-    equip:[], loadType:'time', mult:0.6, scheme:S(3,1), cat:'core' }, // reps field unused; minutes derived
-  { id:'crunch', name:'Crunch', emoji:'🌀', primary:'abs', secondary:[],
-    equip:[], loadType:'bodyweight', mult:1, scheme:S(3,20), cat:'core', benchmarkFor:'abs' },
-  { id:'leg_raise', name:'Hanging / Lying Leg Raise', emoji:'🦿', primary:'abs', secondary:['obliques'],
-    equip:[], loadType:'bodyweight', mult:1, scheme:S(3,15), cat:'core' },
-  { id:'russian_twist', name:'Russian Twist', emoji:'🔄', primary:'obliques', secondary:['abs'],
-    equip:[], loadType:'bodyweight', mult:1, scheme:S(3,20), cat:'core', benchmarkFor:'obliques' },
-  { id:'superman', name:'Superman', emoji:'🦸', primary:'lower_back', secondary:['glutes'],
-    equip:[], loadType:'bodyweight', mult:1, scheme:S(3,15), cat:'core', benchmarkFor:'lower_back' },
-  { id:'back_extension', name:'Back Extension', emoji:'🌉', primary:'lower_back', secondary:['glutes','hamstrings'],
-    equip:['bench'], loadType:'bodyweight', mult:1, scheme:S(3,15), cat:'core' },
+  // ---- CORE --------------------------------------------------------------
+  { id:'plank', name:'Plank', emoji:'🧱', pattern:'rotation', primary:'abs', secondary:['obliques','lower_back'],
+    cat:'core', rel:1.0, holdBase:45, scheme:{sets:3,reps:1}, options:[ O.body({kind:'hold'}) ] },
+  { id:'crunch', name:'Crunch', emoji:'🌀', pattern:'rotation', primary:'abs', secondary:[],
+    cat:'core', rel:1.0, scheme:{sets:3,reps:20}, benchmarkFor:'abs', options:[ O.body() ] },
+  { id:'leg_raise', name:'Leg Raise', emoji:'🦿', pattern:'rotation', primary:'abs', secondary:['obliques'],
+    cat:'core', rel:1.0, scheme:{sets:3,reps:15}, options:[ O.body(), O.bodyBar({label:'Hanging Leg Raise'}) ] },
+  { id:'russian_twist', name:'Russian Twist', emoji:'🔄', pattern:'rotation', primary:'obliques', secondary:['abs'],
+    cat:'core', rel:1.0, scheme:{sets:3,reps:20}, benchmarkFor:'obliques', options:[ O.body(), O.db1({label:'Weighted Twist'}) ] },
+  { id:'back_ext', name:'Back Extension', emoji:'🌉', pattern:'hinge', primary:'lower_back', secondary:['glutes','hamstrings'],
+    cat:'core', rel:1.0, scheme:{sets:3,reps:15}, benchmarkFor:'lower_back', options:[ O.body({label:'Superman'}), O.bodyBench() ] },
 
-  // ---- Legs --------------------------------------------------------------
-  { id:'goblet_squat', name:'Goblet Squat', emoji:'🏆', primary:'quads', secondary:['glutes','hamstrings'],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:false, mult:1.0, scheme:S(4,10), cat:'strength' },
-  { id:'back_squat', name:'Barbell Back Squat', emoji:'🏋️', primary:'quads', secondary:['glutes','hamstrings','lower_back'],
-    equip:['barbell','squat_rack'], loadType:'barbell', mult:2.6, scheme:S(4,8), cat:'strength', benchmarkFor:'quads' },
-  { id:'bodyweight_squat', name:'Bodyweight Squat', emoji:'🪑', primary:'quads', secondary:['glutes'],
-    equip:[], loadType:'bodyweight', mult:1, scheme:S(3,20), cat:'strength' },
-  { id:'lunge', name:'Walking Lunge', emoji:'🚶', primary:'glutes', secondary:['quads','hamstrings'],
-    equip:['flat_area'], loadType:'bodyweight', mult:1, scheme:S(3,16), cat:'strength' },
-  { id:'db_rdl', name:'Dumbbell Romanian Deadlift', emoji:'🪝', primary:'hamstrings', secondary:['glutes','lower_back'],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:true, mult:1.1, scheme:S(4,10), cat:'strength', benchmarkFor:'hamstrings' },
-  { id:'barbell_deadlift', name:'Barbell Deadlift', emoji:'🏗️', primary:'hamstrings', secondary:['glutes','lower_back','upper_back','traps'],
-    equip:['barbell'], loadType:'barbell', mult:3.0, scheme:S(4,5), cat:'strength' },
-  { id:'hip_thrust', name:'Hip Thrust', emoji:'🍑', primary:'glutes', secondary:['hamstrings'],
-    equip:['bench'], loadType:'bodyweight', mult:1, scheme:S(4,15), cat:'strength', benchmarkFor:'glutes' },
-  { id:'calf_raise', name:'Standing Calf Raise', emoji:'🦶', primary:'calves', secondary:[],
-    equip:[], loadType:'bodyweight', mult:1, scheme:S(4,20), cat:'strength', benchmarkFor:'calves' },
-  { id:'db_calf_raise', name:'Dumbbell Calf Raise', emoji:'🦵', primary:'calves', secondary:[],
-    equip:['dumbbells'], loadType:'per_dumbbell', twoHand:true, mult:1.4, scheme:S(4,15), cat:'strength' },
+  // ---- LEGS --------------------------------------------------------------
+  { id:'squat', name:'Squat', emoji:'🏋️', pattern:'squat', primary:'quads', secondary:['glutes','hamstrings','lower_back'],
+    cat:'strength', rel:1.6, scheme:{sets:4,reps:8}, benchmarkFor:'quads', options:[ O.barbellRk(), O.db1({label:'Goblet Squat'}), O.body({label:'Bodyweight Squat', scheme:{sets:3,reps:20}}) ] },
+  { id:'lunge', name:'Lunge', emoji:'🚶', pattern:'lunge', primary:'glutes', secondary:['quads','hamstrings'],
+    cat:'strength', rel:1.2, scheme:{sets:3,reps:16}, options:[ O.db(), O.body() ] },
+  { id:'rdl', name:'Romanian Deadlift', emoji:'🪝', pattern:'hinge', primary:'hamstrings', secondary:['glutes','lower_back'],
+    cat:'strength', rel:1.5, scheme:{sets:4,reps:10}, benchmarkFor:'hamstrings', options:[ O.db(), O.barbell() ] },
+  { id:'deadlift', name:'Deadlift', emoji:'🏗️', pattern:'hinge', primary:'hamstrings', secondary:['glutes','lower_back','upper_back','traps'],
+    cat:'strength', rel:1.7, scheme:{sets:4,reps:5}, options:[ O.barbell() ] },
+  { id:'hip_thrust', name:'Hip Thrust', emoji:'🍑', pattern:'hinge', primary:'glutes', secondary:['hamstrings'],
+    cat:'strength', rel:1.5, scheme:{sets:4,reps:12}, benchmarkFor:'glutes', options:[ O.barbell({equip:['barbell','bench']}), O.db({equip:['dumbbells','bench']}), O.bodyBench() ] },
+  { id:'calf_raise', name:'Calf Raise', emoji:'🦶', pattern:'squat', primary:'calves', secondary:[],
+    cat:'strength', rel:1.2, scheme:{sets:4,reps:18}, benchmarkFor:'calves', options:[ O.db(), O.machine(), O.body({scheme:{sets:4,reps:25}}) ] },
 
-  // ---- Cardio ------------------------------------------------------------
-  { id:'run_trail', name:'Trail Run', emoji:'🌲', primary:'cardio', secondary:['quads','calves','glutes'],
-    equip:['trail'], loadType:'time', mult:1.6, scheme:S(1,1), cat:'cardio' },
-  { id:'run_sidewalk', name:'Road Run', emoji:'🏃', primary:'cardio', secondary:['quads','calves'],
-    equip:['sidewalk'], loadType:'time', mult:1.6, scheme:S(1,1), cat:'cardio' },
-  { id:'treadmill_run', name:'Treadmill Run', emoji:'🏃‍♂️', primary:'cardio', secondary:['quads','calves'],
-    equip:['treadmill'], loadType:'time', mult:1.6, scheme:S(1,1), cat:'cardio', benchmarkFor:'cardio' },
-  { id:'bike', name:'Stationary Bike', emoji:'🚲', primary:'cardio', secondary:['quads'],
-    equip:['standing_bike'], loadType:'time', mult:2.0, scheme:S(1,1), cat:'cardio' },
-  { id:'jump_rope', name:'Jump Rope', emoji:'🪢', primary:'cardio', secondary:['calves'],
-    equip:['jump_rope'], loadType:'time', mult:0.8, scheme:S(3,1), cat:'cardio' },
-  { id:'box_jump', name:'Box Jumps', emoji:'📦', primary:'cardio', secondary:['quads','glutes','calves'],
-    equip:['box'], loadType:'bodyweight', mult:1, scheme:S(4,12), cat:'cardio' },
-  { id:'burpee', name:'Burpees', emoji:'💥', primary:'cardio', secondary:['chest','quads','abs'],
-    equip:[], loadType:'bodyweight', mult:1, scheme:S(4,12), cat:'cardio' },
-  { id:'suicides', name:'Court Suicides', emoji:'🏀', primary:'cardio', secondary:['quads','calves'],
-    equip:['basketball_court'], loadType:'time', mult:0.6, scheme:S(4,1), cat:'cardio' },
-  { id:'jumping_jacks', name:'Jumping Jacks', emoji:'⭐', primary:'cardio', secondary:['calves','side_delt'],
-    equip:[], loadType:'time', mult:0.5, scheme:S(3,1), cat:'cardio' },
+  // ---- CONDITIONING (heart & lungs) — equipment swaps the activity --------
+  { id:'steady_cardio', name:'Steady Cardio', emoji:'🏃', pattern:'gait', primary:'cardio', secondary:['quads','calves','glutes'],
+    cat:'cardio', rel:1.0, scheme:{sets:1,reps:1}, benchmarkFor:'cardio', options:[
+      { id:'tread', kind:'time', equip:['treadmill'], label:'Treadmill Run', emoji:'🏃‍♂️', minMult:1.4 },
+      { id:'trail', kind:'time', equip:['trail'],     label:'Trail Run',     emoji:'🌲', minMult:1.4 },
+      { id:'road',  kind:'time', equip:['sidewalk'],  label:'Road Run',      emoji:'🏃', minMult:1.4 },
+      { id:'bike',  kind:'time', equip:['standing_bike'], label:'Stationary Bike', emoji:'🚲', minMult:1.9 },
+      { id:'rope',  kind:'time', equip:['jump_rope'], label:'Jump Rope',     emoji:'🪢', minMult:0.9, scheme:{sets:3,reps:1} },
+    ] },
+  { id:'cardio_intervals', name:'Cardio Intervals', emoji:'💥', pattern:'gait', primary:'cardio', secondary:['quads','glutes','abs'],
+    cat:'cardio', rel:1.0, scheme:{sets:4,reps:12}, options:[
+      { id:'burpee', kind:'bodyweight', equip:[], label:'Burpees', emoji:'💥' },
+      { id:'boxjump',kind:'bodyweight', equip:['box'], label:'Box Jumps', emoji:'📦' },
+      { id:'suicide',kind:'time', equip:['basketball_court'], label:'Court Suicides', emoji:'🏀', minMult:0.6, scheme:{sets:4,reps:1} },
+      { id:'jacks',  kind:'time', equip:[], label:'Jumping Jacks', emoji:'⭐', minMult:0.5, scheme:{sets:3,reps:1} },
+    ] },
 ];
 
-// Quick lookup by id.
-const EXERCISE_BY_ID = Object.fromEntries(EXERCISES.map(e => [e.id, e]));
+const MOVEMENT_BY_ID = Object.fromEntries(MOVEMENTS.map(m => [m.id, m]));
 
 const DAYS = ['sun','mon','tue','wed','thu','fri','sat'];
 const DAY_LABELS = { sun:'Sun', mon:'Mon', tue:'Tue', wed:'Wed', thu:'Thu', fri:'Fri', sat:'Sat' };
 
+// Default per-equipment efficiency: converts target per-limb load <-> native.
+const KIND_EFF = { dbpair:1.0, dbsingle:1.0, barbell:1.1, curlbar:1.0, cable:1.0, machine:1.1 };
+const KIND_LABEL = { dbpair:'Dumbbells', dbsingle:'Dumbbell', barbell:'Barbell', curlbar:'Curl bar', cable:'Cable', machine:'Machine', bodyweight:'Bodyweight', hold:'Bodyweight', time:'Cardio' };
+
 window.DB = {
-  MUSCLES, EQUIPMENT, DEFAULT_WEIGHTS, WEIGHT_OPTIONS, BAR_WEIGHTS,
-  GOALS, EXERCISES, EXERCISE_BY_ID, DAYS, DAY_LABELS,
+  MUSCLES, EQUIPMENT, DEFAULT_WEIGHTS, WEIGHT_OPTIONS, BAR_WEIGHTS, GOALS,
+  MOVEMENTS, MOVEMENT_BY_ID, DAYS, DAY_LABELS, KIND_EFF, KIND_LABEL,
 };

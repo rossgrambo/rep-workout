@@ -227,32 +227,120 @@ const UI = {
   },
 
   exerciseCard(item) {
-    const ex = DB.EXERCISE_BY_ID[item.exerciseId];
     const p = item.prescription;
-    const tags = [ex.primary, ...ex.secondary].map(m=>DB.MUSCLES[m]?.label||m);
     const card = h(`<div class="card ${item.done?('done '+item.done):''}">
-      <div class="card-img">${ex.emoji}</div>
-      <div class="card-body">
-        <div class="card-title">${esc(ex.name)}</div>
-        <div class="card-presc">${esc(Algo.prescriptionText(ex,p))}</div>
-        <div class="card-tags">${tags.slice(0,3).map(t=>`<span>${esc(t)}</span>`).join('')}</div>
-      </div>
+      <button class="card-tap">
+        <div class="card-img">${p.emoji}</div>
+        <div class="card-body">
+          <div class="card-title">${esc(p.name)} <span class="card-gear">${esc(DB.KIND_LABEL[p.kind]||'')}</span></div>
+          <div class="card-presc">${esc(p.line)}</div>
+          <div class="card-tags">${p.tags.map(t=>`<span>${esc(t)}</span>`).join('')}</div>
+        </div>
+      </button>
       <div class="card-actions"></div>
     </div>`);
+    card.querySelector('.card-tap').onclick = ()=>UI.cardMenu(item);
     const actions = card.querySelector('.card-actions');
     if (item.done) {
-      const badge = h(`<div class="result ${item.done}">${item.done==='green'?'✓':'✓'}</div>`);
+      const badge = h(`<div class="result ${item.done}">✓</div>`);
       const undo = h('<button class="undo">undo</button>');
-      undo.onclick = ()=>App.undo(item.exerciseId);
+      undo.onclick = ()=>App.undo(item.movementId);
       actions.appendChild(badge); actions.appendChild(undo);
     } else {
       const g = h('<button class="check green" title="Done — felt easy">✓</button>');
       const r = h('<button class="check red" title="Done — hit failure (ideal!)">✓</button>');
-      g.onclick = ()=>App.mark(item.exerciseId,'green');
-      r.onclick = ()=>App.mark(item.exerciseId,'red');
+      g.onclick = ()=>App.mark(item.movementId,'green');
+      r.onclick = ()=>App.mark(item.movementId,'red');
       actions.appendChild(g); actions.appendChild(r);
     }
     return card;
+  },
+
+  // ---- card popup: switch equipment / reroll / adjust --------------------
+  cardMenu(item) {
+    const mv = DB.MOVEMENT_BY_ID[item.movementId];
+    const wrap = h('<div class="menu"></div>');
+    let back;
+    const row = (label, desc, fn) => {
+      const b = h(`<button class="menu-row"><b>${esc(label)}</b><small>${esc(desc)}</small></button>`);
+      b.onclick = () => { back.remove(); fn(); };
+      wrap.appendChild(b);
+    };
+    const usable = Algo.rankOptions(App.state, mv).all;
+    if (usable.length > 1) row('Switch equipment', 'Use different gear for this motion', () => UI.switchDialog(item));
+    row('Reroll exercise', 'Mark this as used and swap in a new one', () => App.reroll(item.movementId));
+    row('Adjust weight / reps', 'Set your real numbers as the new baseline', () => UI.adjustDialog(item));
+    back = UI.modal(`${mv.name} · ${item.prescription.line}`, wrap, [['Close', null]]);
+  },
+
+  switchDialog(item) {
+    const mv = DB.MOVEMENT_BY_ID[item.movementId];
+    const ranked = Algo.rankOptions(App.state, mv).all
+      .slice().sort((a,b)=>a.matchError-b.matchError);
+    const wrap = h('<div class="opt-list"></div>');
+    let back;
+    for (const presc of ranked) {
+      const opt = mv.options.find(o=>o.id===presc.optionId);
+      const gear = opt.label || DB.KIND_LABEL[presc.kind] || 'Option';
+      const cur = presc.optionId === item.optionId;
+      const m = UI.matchBadge(presc.matchError, presc.cat);
+      const b = h(`<button class="opt-row ${cur?'cur':''}">
+        <span class="opt-main"><b>${esc(gear)}</b><small>${esc(presc.line)}</small></span>
+        <span class="opt-badge ${m.cls}">${esc(m.label)}${cur?' · current':''}</span>
+      </button>`);
+      b.onclick = ()=>{ back.remove(); App.switchEquip(item.movementId, presc.optionId); };
+      wrap.appendChild(b);
+    }
+    back = UI.modal('Switch equipment', wrap, [['Cancel', null]]);
+  },
+
+  matchBadge(err, cat) {
+    if (cat === 'cardio') return { label:'available', cls:'ok' };
+    if (err == null)   return { label:'—', cls:'ok' };
+    if (err <= 0.10)   return { label:'ideal match', cls:'good' };
+    if (err <= 0.25)   return { label:'good match', cls:'ok' };
+    return { label:'rough match', cls:'warn' };
+  },
+
+  adjustDialog(item) {
+    const mv = DB.MOVEMENT_BY_ID[item.movementId];
+    const p = item.prescription;
+    const opt = mv.options.find(o=>o.id===item.optionId) || mv.options[0];
+    const weighted = mv.cat !== 'cardio' && !['bodyweight','hold','time'].includes(opt.kind);
+    const wrap = h('<div class="adjust"></div>');
+    let loadIn=null, repsIn=null;
+
+    if (weighted) {
+      wrap.appendChild(h(`<label class="field"><span>Weight (${esc(p.unit)})${p.each?' — per hand':''}</span></label>`));
+      loadIn = h(`<input type="number" inputmode="decimal" step="2.5" value="${p.load}">`);
+      wrap.querySelector('label').appendChild(loadIn);
+      const rl = h(`<label class="field"><span>Reps</span></label>`);
+      repsIn = h(`<input type="number" inputmode="numeric" step="1" value="${p.reps}">`);
+      rl.appendChild(repsIn); wrap.appendChild(rl);
+    } else if (mv.cat === 'cardio' && opt.kind === 'time') {
+      wrap.appendChild(h(`<label class="field"><span>Minutes</span></label>`));
+      loadIn = h(`<input type="number" inputmode="numeric" step="1" value="${p.load}">`);
+      wrap.querySelector('label').appendChild(loadIn);
+    } else if (opt.kind === 'hold') {
+      wrap.appendChild(h(`<label class="field"><span>Seconds</span></label>`));
+      loadIn = h(`<input type="number" inputmode="numeric" step="5" value="${p.load}">`);
+      wrap.querySelector('label').appendChild(loadIn);
+    } else { // bodyweight reps / cardio intervals
+      wrap.appendChild(h(`<label class="field"><span>Reps</span></label>`));
+      repsIn = h(`<input type="number" inputmode="numeric" step="1" value="${p.reps}">`);
+      wrap.querySelector('label').appendChild(repsIn);
+    }
+    wrap.appendChild(h(`<p class="hint">These become your new baseline for ${esc(DB.MUSCLES[mv.primary].label)} — future sessions build from here.</p>`));
+
+    UI.modal('Adjust', wrap, [
+      ['Save', () => {
+        const patch = {};
+        if (loadIn) patch.load = Number(loadIn.value) || undefined;
+        if (repsIn) patch.reps = Number(repsIn.value) || undefined;
+        App.adjustBaseline(item.movementId, patch);
+      }],
+      ['Cancel', null],
+    ]);
   },
 
   // ======================================================================
@@ -346,6 +434,7 @@ const UI = {
     m.appendChild(row);
     back.onclick = e=>{ if(e.target===back) back.remove(); };
     document.body.appendChild(back);
+    return back;
   },
 };
 

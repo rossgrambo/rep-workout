@@ -20,35 +20,48 @@ per muscle**, per-exercise streak counters, and history. The long-term plan is
 to let an LLM edit this JSON directly (_"lower my bicep strength"_, _"I keep
 running out of time"_). Export/import it any time from **Setup**.
 
+### Motion, not machine
+A workout is a **movement** (a motion like "Bent Over Row"), independent of
+equipment. Each movement lists the **equipment options** that can perform it
+(barbell / dumbbells / curl bar / cable / bodyweight…). The algorithm:
+
+1. Picks a **target load** from the primary muscle's strength score, expressed in
+   a single common scale (a "per-limb-equivalent" weight in lb).
+2. For each *available* option, computes the **achievable** load and how closely
+   it matches the target (`matchError`).
+3. Chooses the best match — and **rejects options that can't get close**. This is
+   why a barbell with no plates (only a bare 45 lb bar) is skipped in favour of
+   dumbbells that actually hit the target, instead of clamping down to 45 lb.
+
+This is also what powers the card popup's **Switch equipment** list (ranked by
+match quality).
+
 ### The algorithm (`js/algorithm.js`)
-Three small, swappable functions:
+Small, swappable functions:
 
-1. **`prescribe(state, exercise)`** — every weight/rep/time is *derived* from the
-   primary muscle's strength score. Dumbbell loads snap to weights you actually
-   own; barbell loads snap to plate combinations you can actually build;
-   bodyweight moves scale reps; cardio scales minutes.
-
-2. **`generatePlan(state, date)`** — picks today's session:
-   - Today's **time budget** comes from your per-day hours (0 = rest day).
-   - Each selected **goal** contributes a weighting over muscles; they're summed
-     into today's priorities.
-   - Candidates are filtered to exercises whose equipment you have, then scored
-     by `muscle priority × least-recently-used` (so the library rotates).
-   - A greedy fill adds exercises until the time budget is spent, **penalizing
-     muscles already hit** so the session stays balanced.
-
-3. **`applyResult(state, exId, result)`** — the progression rule from the spec:
-   - A **red check** (finished, but you hit failure) is the *target* zone.
-   - **2 greens in a row** → the muscle's strength score goes **up** (too easy).
-   - **3 reds in a row** → it goes **down** (you're failing out).
+- **`evalOption` / `bestPrescription`** — the motion+equipment matching above.
+- **`generatePlan(state, date)`** — today's session: time budget from your per-day
+  hours (0 = rest), goal-summed muscle priorities, candidates filtered to what's
+  achievable, scored by `muscle priority × least-recently-used`, then a greedy
+  fill that **penalizes muscles already hit** so the session stays balanced.
+- **`applyResult(state, movementId, result)`** — progression: a **red check**
+  (finished, hit failure) is the *target*; **2 greens in a row** → muscle score
+  **up**; **3 reds in a row** → **down**.
+- **`setBaseline(...)`** — the card popup's *Adjust weight/reps*; your entered
+  numbers become the new baseline for that muscle (back-solved into its score).
 
 Strength scores are seeded from your bodyweight using standard bodyweight-ratio
 strength standards (à la ExRx / StrengthLevel), then self-correct from there.
 
+### Tapping a card
+Tap anywhere on a card (not the checks) to **switch equipment**, **reroll** the
+exercise (marks it used-today and swaps in a fresh one), or **adjust weight/reps**
+(sets your real baseline — most useful for brand-new users).
+
 ### Adding exercises
-Append to the `EXERCISES` array in `js/data.js`. Each entry declares its muscles,
-required equipment, load type, and a load multiplier — the algorithm needs no
-other changes.
+Append to the `MOVEMENTS` array in `js/data.js`. Each movement declares its
+muscles, a `rel` intensity, a rep scheme, and an `options` list of equipment that
+can perform it — the algorithm needs no other changes.
 
 ---
 

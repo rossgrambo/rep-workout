@@ -1,6 +1,6 @@
 // sw.js — minimal offline-first service worker.
 // Bump CACHE when you ship changes so clients pull the new files.
-const CACHE = 'rep-v1';
+const CACHE = 'rep-v2';
 const ASSETS = [
   '.', 'index.html',
   'css/styles.css',
